@@ -1,0 +1,13 @@
+{
+  "name": "TRMJsFetchViaJwt",
+  "version": "1.0.0",
+  "description": "Class for working with fetch and JWT in JS",
+  "keywords": "fetch JWT",
+  "homepage": "https://github.com/trm2007/TRMJsFetchViaJwt",
+  "license": "X11 License",
+  "author": "Sergey Kolesnikov <trm@mail.ru>",
+  "dependencies": {
+    "TRMJsCookies": "git+https://github.com/trm2007/TRMJsCookies",
+    "TRMJsHelpers": "git+https://github.com/trm2007/TRMJsHelpers"
+  }
+}
