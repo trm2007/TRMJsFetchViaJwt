@@ -1,4 +1,4 @@
-import { generateGetUrl, checkFetchResponseStatus } from "./Helpers";
+import { generateGetUrl, checkFetchResponseStatus, debugPrint } from "./Helpers";
 import { getCookie, setCookie } from "./Cookies";
 
 /**
@@ -100,6 +100,20 @@ export class FetchViaJwt {
 
     this.BeforeHandlers = BeforeHandlers || [];
     this.AfterHandlers = AfterHandlers || [];
+
+    this.AuthorizationFlag = true;
+  }
+
+  /**
+   * Включает или отключает флаг авторизации, т.е. флаг, который указывает, что с каждым запросом 
+   * нужно добавлять заголовок Authorization с Bearer ключом.
+   * По умолчанию AuthorizationFlag = true - заголовок передается
+   * 
+   * @param {boolean} AuthorizationFlag - значение, в которое будет установлен this.AuthorizationFlag, 
+   * по умолчанию true
+   */
+  setAuthorizationFlag(AuthorizationFlag = true) {
+    this.AuthorizationFlag = AuthorizationFlag;
   }
 
   /**
@@ -131,116 +145,132 @@ export class FetchViaJwt {
   }
 
   /**
-   * получает данные методом POST с проверкой авторизации,
+   * Получает данные методом POST с проверкой авторизации,
    * если Access токен просрочен, то повторно запрашивает JWT,
-   * используя функцию fetchTokens,
-   * если обновить токены не удалось
+   * используя функцию fetchTokens, если обновить токены не удалось.
+   * Получает данные в виде JSON-строки, 
+   * преобразует их в стандартный объект JavaScript, и возвращает в Promise
+   * фактически это alias для this.getJSON(Url, Data, Headers, Config);
    * 
    * @param {string} Url 
    * @param {object} Data не обязательный параметр, объект с данными для POST-запроса, 
-   * будет преобразован в JSON-строку - JSON.stringify(Data)
-   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса
+   * все пары {ключ: значение} из объекта Data будут добавлены в строку GET-запроса
+   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
+   * заголовок Content-Type автоматически устанавливается в application/json
    * @param {number} Count служебный параметр - счетчик неудачных вызовов
    * @returns {Promise} промис, содержащий объект с данными
    */
-  get(Url, Data = null, Headers = {}) {
-    this.startBeforeHandlers();
-    return this.getCounted(Url, Data = {}, Headers = {})
-      .then(Result => {
-        this.startAfterHandlers(Result);
-        return Result;
-      });
+  get(Url, Data = null, Headers = {}, Config = {}) {
+    return this.getJSON(Url, Data, Headers, Config);
   }
-  getCounted(Url, Data = null, Headers = {}, Count = 0) {
+  async getJSON(Url, Data = null, Headers = {}, Config = {}) {
+    this.startBeforeHandlers();
+    const Response = await this.getCounted(Url, Data, Headers, Config);
+    const Result = await Response.json();
+    this.startAfterHandlers(Result);
+    return Result;
+  }
+  getCounted(Url, Data = null, Headers = {}, Config = {}, Count = 0) {
     // вызываем getViaJwt, которая добавит все поля из Data к Url-запроса
-    return this.getViaJwt(Url, Data, Headers)
+    return this.getViaJwt(Url, Data, Headers, Config)
       .then(this.onResponseCheck401) // .then(Resp => this.onResponseCheck401(Resp))
-      .then(Resp => Resp.json())
-      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, this.get, Count));
+      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, Config, this.get, Count));
   }
 
   /**
-   * получает данные методом POST с проверкой авторизации,
+   * Получает данные методом POST с проверкой авторизации,
    * если Access токен просрочен, то повторно запрашивает JWT,
-   * используя функцию fetchTokens,
-   * если обновить токены не удалось
+   * используя функцию fetchTokens, если обновить токены не удалось.
+   * Получает данные в виде JSON-строки, 
+   * преобразует их в стандартный объект JavaScript и возвращает в Promise,
+   * фактически это alias для this.postJSON(Url, Data, Headers, Config);
    * 
    * @param {string} Url 
    * @param {object} Data не обязательный параметр, объект с данными для POST-запроса, 
-   * будет преобразован в JSON-строку - JSON.stringify(Data)
-   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса
+   * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
+   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
+   * заголовок Content-Type автоматически устанавливается в application/json
    * @param {number} Count служебный параметр - счетчик неудачных вызовов
    * @returns {Promise} промис, содержащий объект с данными
    */
-  post(Url, Data = null, Headers = {}) {
-    this.startBeforeHandlers();
-    return this.postCounted(Url, Data, Headers)
-      .then(Result => {
-        this.startAfterHandlers(Result);
-        return Result;
-      });
+  post(Url, Data = null, Headers = {}, Config = {}) {
+    return this.postJSON(Url, Data, Headers, Config);
   }
-  postCounted(Url, Data = null, Headers = {}, Count = 0) {
-    return this.fetchViaJwt(Url, "POST", Data, Headers)
+  async postJSON(Url, Data = null, Headers = {}, Config = {}) {
+    this.startBeforeHandlers();
+    const Response = await this.postCounted(Url, Data, Headers, Config);
+    const Result = await Response.json();
+    this.startAfterHandlers(Result);
+    return Result;
+  }
+  postCounted(Url, Data = null, Headers = {}, Config = {}, Count = 0) {
+    return this.fetchViaJwt(Url, "POST", Data, Headers, Config)
       .then(this.onResponseCheck401)
-      .then(Resp => Resp.json())
-      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, this.post, Count));
+      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, Config, this.post, Count));
   }
 
   /**
-   * получает данные методом POST с проверкой авторизации,
+   * Получает данные методом POST с проверкой авторизации,
    * если Access токен просрочен, то повторно запрашивает JWT,
-   * используя функцию fetchTokens,
-   * если обновить токены не удалось
+   * используя функцию fetchTokens, если обновить токены не удалось.
+   * Получает данные в виде JSON-строки, 
+   * преобразует их в стандартный объект JavaScript и возвращает в Promise,
+   * фактически это alias для this.putJSON(Url, Data, Headers, Config);
    * 
    * @param {string} Url 
    * @param {object} Data не обязательный параметр, объект с данными для PUT-запроса, 
-   * будет преобразован в JSON-строку - JSON.stringify(Data)
-   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса
+   * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
+   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
+   * заголовок Content-Type автоматически устанавливается в application/json
    * @param {number} Count служебный параметр - счетчик неудачных вызовов
    * @returns {Promise} промис, содержащий объект с данными
    */
-  put(Url, Data = null, Headers = {}) {
-    this.startBeforeHandlers();
-    return this.putCounted(Url, Data, Headers)
-      .then(Result => {
-        this.startAfterHandlers(Result);
-        return Result;
-      });
+  put(Url, Data = null, Headers = {}, Config = {}) {
+    return this.putJSON(Url, Data, Headers, Config);
   }
-  putCounted(Url, Data = null, Headers = {}, Count = 0) {
-    return this.fetchViaJwt(Url, "PUT", Data, Headers)
+  async putJSON(Url, Data = null, Headers = {}, Config = {}) {
+    this.startBeforeHandlers();
+    const Response = await this.putCounted(Url, Data, Headers, Config);
+    const Result = await Response.json();
+    this.startAfterHandlers(Result);
+    return Result;
+  }
+  putCounted(Url, Data = null, Headers = {}, Config = {}, Count = 0) {
+    return this.fetchViaJwt(Url, "PUT", Data, Headers, Config)
       .then(this.onResponseCheck401)
-      .then(Resp => Resp.json())
-      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, this.put, Count));
+      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, Config, this.put, Count));
   }
 
   /**
-   * получает данные методом POST с проверкой авторизации,
+   * Получает данные методом POST с проверкой авторизации,
    * если Access токен просрочен, то повторно запрашивает JWT,
-   * используя функцию fetchTokens,
-   * если обновить токены не удалось
+   * используя функцию fetchTokens, если обновить токены не удалось
+   * Получает данные в виде JSON-строки, 
+   * преобразует их в стандартный объект JavaScript и возвращает в Promise,
+   * фактически это alias для this.deleteJSON(Url, Data, Headers, Config);
    * 
    * @param {string} Url 
    * @param {object} Data не обязательный параметр, объект с данными для DELETE-запроса, 
-   * будет преобразован в JSON-строку - JSON.stringify(Data)
-   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса
+   * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
+   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
+   * заголовок Content-Type автоматически устанавливается в application/json
    * @param {number} Count служебный параметр - счетчик неудачных вызовов
    * @returns {Promise} промис, содержащий объект с данными
    */
-  delete(Url, Data = null, Headers = {}) {
-    this.startBeforeHandlers();
-    return this.deleteCounted(Url, Data, Headers)
-      .then(Result => {
-        this.startAfterHandlers(Result);
-        return Result;
-      });
+  delete(Url, Data = null, Headers = {}, Config = {}) {
+    return this.deleteJSON(Url, Data, Headers, Config);
   }
-  deleteCounted(Url, Data = null, Headers = {}, Count = 0) {
-    return this.fetchViaJwt(Url, "DELETE", Data, Headers)
+  async deleteJSON(Url, Data = null, Headers = {}, Config = {}) {
+    this.startBeforeHandlers();
+    const Response = await this.deleteCounted(Url, Data, Headers, Config);
+    const Result = await Response.json();
+    this.startAfterHandlers(Result);
+    return Result;
+  }
+  deleteCounted(Url, Data = null, Headers = {}, Config = {}, Count = 0) {
+    return this.fetchViaJwt(Url, "DELETE", Data, Headers, Config)
       .then(this.onResponseCheck401)
-      .then(Resp => Resp.json())
-      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, this.delete, Count));
+      .catch(this.refreshTokensAndRepeatRequest(Url, Data, Headers, Config, this.delete, Count));
   }
 
   /**
@@ -296,7 +326,7 @@ export class FetchViaJwt {
    * @param {number} Count кол-во повторов (кол-во текущих неудачных вызовов)
    * @returns {function}
    */
-  refreshTokensAndRepeatRequest(Url, Data, Headers, Func, Count) {
+  refreshTokensAndRepeatRequest(Url, Data, Headers, Config, Func, Count) {
     return (ErrResp) => {
       // если ошибка не Error401, значит это не наша ошибка, выбрасываем дальше
       if (!(ErrResp instanceof Error401)) {
@@ -314,7 +344,7 @@ export class FetchViaJwt {
         this.setRefreshToken(Tokens[this.JWT_REFRESH_TOKEN_NAME]);
         // при удачном получении новых токенов рекурсивно вызываем функцию,
         // в которой произошел вызов этого обновления
-        return Func.call(this, Url, Data, Headers, Count + 1);
+        return Func.call(this, Url, Data, Headers, Config, Count + 1);
       });
     };
   }
@@ -334,8 +364,6 @@ export class FetchViaJwt {
     localStorage.setItem(this.JWT_REFRESH_TOKEN_NAME, RefreshToken);
   }
 
-
-
   /**
    * обновление токенов,
    * отправляет на сервер запрос с Refresh токеном,
@@ -345,71 +373,19 @@ export class FetchViaJwt {
    * 
    * @returns {Promise} промис с объектом, содержащим два новых токена
    */
-  fetchTokensDefault() {
+  async fetchTokensDefault() {
     const RefreshToken = this.getRefreshToken();
     const AccessToken = this.getAccessToken();
-    return this
+    const Resp = await this
       .simplePost(
-        this.JWT_REFRESH_URL, // Url
-        { [this.JWT_REFRESH_TOKEN_NAME]: RefreshToken, [this.JWT_ACCESS_TOKEN_NAME]: AccessToken, }, // Data
+        this.JWT_REFRESH_URL,
+        { [this.JWT_REFRESH_TOKEN_NAME]: RefreshToken, [this.JWT_ACCESS_TOKEN_NAME]: AccessToken, },
         { "Authorization": "Bearer " + AccessToken, } // Headers
-      )
-      .then((Resp) => {
-        if (checkFetchResponseStatus(Resp, HTTP_PAGE_NOT_FOUND)) {
-          throw new Error404("[fetchTokensDefault]");
-        }
-        return Resp.json()
-      });
-  }
-
-  /**
-   * Сконфигурированный для CORS запросов fetch
-   * @param {string} Url 
-   * @returns {Promise}
-   */
-  fetchViaJwt(Url, Method = "GET", Data = null, Headers = {}) {
-    const AccessToken = this.getAccessToken(this.JWT_ACCESS_TOKEN_NAME); // BEARER
-    if (!AccessToken) {
-      return new Promise((res, reject) => {
-        reject(new ErrorNoAccessToken("[fetchViaJwt]"));
-      });
+      );
+    if (checkFetchResponseStatus(Resp, HTTP_PAGE_NOT_FOUND)) {
+      throw new Error404("[fetchTokensDefault]");
     }
-    // объединение всех заголовков,
-    // приоритет имеет Content-Type и Authorization устанавливаемые автоматом как часть логики работы объекта FetchViaJwt,
-    // они перезапишут эти заголовки, если их указать в Headers или this.CommonHeaders,
-    // затем приоритет у Headers из аргументов функции, заголовки из Headers перезапишут такие же из this.CommonHeaders,
-    // на последнем месте будут заголовки установленные в this.CommonHeaders
-    const AllHeaders = Object.assign({}, this.CommonHeaders, Headers || {}, {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + AccessToken,
-    });
-    const Config = {
-      method: Method, // *GET, POST, PUT, DELETE, etc.
-      mode: "cors", // no-cors, *cors, same-origin
-      cache: "default", // *default, no-cache, reload, force-cache, only-if-cached
-      credentials: "include", // include, *same-origin, omit
-      headers: AllHeaders,
-      redirect: "follow", // manual, *follow, error
-      referrerPolicy: "no-referrer", // no-referrer, *client
-      body: Data ? JSON.stringify(Data) : undefined, // содержимое должно соответствовать указанному в заголовке "Content-Type"
-    };
-
-    return fetch(Url, Config);
-  }
-
-  /**
-   * Вызывает fetch с методом GET 
-   * формируя заголовок с использованием JWT ключей для авторизации
-   * 
-   * @param {string} Url 
-   * @param {object} Data не обязательный параметр, каждая пара ключ значение,
-   * будут добавлены к строке запроса ?key1=val1&key2=val2
-   * @param {object} Headers 
-   * @returns {Promise}
-   */
-  getViaJwt(Url, Data = null, Headers = {}) {
-    const NewUrl = generateGetUrl(Url, Data);
-    return this.fetchViaJwt(NewUrl, "GET", null, Headers);
+    return Resp.json();
   }
 
   /**
@@ -431,19 +407,66 @@ export class FetchViaJwt {
     // главный приоритет у Headers из аргументов функции, 
     // заголовки из Headers перезапишут такие же из this.CommonHeaders,
     // на последнем месте будут заголовки установленные в this.CommonHeaders
-    const AllHeaders = Object.assign({}, this.CommonHeaders, Headers || {});
-    const NewConfig = {
-      method: Config.method || "GET", // *GET, POST, PUT, DELETE, etc.
-      mode: Config.mode || "cors", // no-cors, *cors, same-origin
-      cache: Config.cache || "default", // *default, no-cache, reload, force-cache, only-if-cached
-      credentials: Config.credentials || "same-origin", // include, *same-origin, omit
+    const AllHeaders = Object.assign(
+      {},
+      this.CommonHeaders,
+      { "Content-Type": "application/json", },
+      Headers || {}
+    );
+    const FullConfig = {
+      method: Config.method, // || "GET", // *GET, POST, PUT, DELETE, etc.
+      mode: Config.mode, // || "cors", // no-cors, *cors, same-origin
+      cache: Config.cache, // || "default", // *default, no-cache, reload, force-cache, only-if-cached
+      credentials: Config.credentials, // || "same-origin", // include, *same-origin, omit
       headers: AllHeaders,
-      redirect: Config.redirect || "follow", // manual, *follow, error
-      referrerPolicy: Config.referrerPolicy || "no-referrer", // no-referrer, *client
+      redirect: Config.redirect, // || "follow", // manual, *follow, error
+      referrerPolicy: Config.referrerPolicy, // || "origin", // no-referrer, *client
       body: Data ? JSON.stringify(Data) : undefined, // содержимое должно соответствовать указанному в заголовке "Content-Type"
     };
 
-    return fetch(Url, NewConfig);
+    return fetch(Url, FullConfig);
+  }
+  /**
+   * fetch сконфигурированный для отправки JWT-ключа 
+   * Access (Bearer) через заголовок Authorization
+   * 
+   * @param {string} Url - URL-адрес запроса
+   * @param {string} Method - метод, по умолчанию GET
+   * @param {object} Data - данные, в этом методе не могут быть переданы для GET-запросов, 
+   * для всех остальных будут добавлены в тело запроса через JSON.stringify
+   * @param {object} Headers - заголовки HTTP-запроса
+   * @param {object} Config - объект конфигурации fetch, подробнее - https://developer.mozilla.org/ru/docs/Web/API/Fetch_API/Using_Fetch
+   * @returns {Promise} промис будет содержать данные ответа сервера - объект Response
+   */
+  fetchViaJwt(Url, Method = "GET", Data = null, Headers = {}, Config = {}) {
+    // если флаг AuthorizationFlag установлен в true,
+    // значит нужно установить заголовок Authorization с ключом Bearer
+    if (this.AuthorizationFlag) {
+      const AccessToken = this.getAccessToken(this.JWT_ACCESS_TOKEN_NAME); // BEARER
+      if (!AccessToken) {
+        return new Promise((res, reject) => {
+          reject(new ErrorNoAccessToken("[fetchViaJwt]"));
+        });
+      }
+      Headers["Authorization"] = "Bearer " + AccessToken
+    }
+    Config.method = Method;
+    return this.fetch(Url, Data, Headers, Config);
+  }
+
+  /**
+   * Вызывает fetch с методом GET 
+   * формируя заголовок с использованием JWT ключей для авторизации
+   * 
+   * @param {string} Url 
+   * @param {object} Data не обязательный параметр, каждая пара ключ значение,
+   * будут добавлены к строке запроса ?key1=val1&key2=val2
+   * @param {object} Headers 
+   * @returns {Promise}
+   */
+  getViaJwt(Url, Data = null, Headers = {}, Config = {}) {
+    const NewUrl = generateGetUrl(Url, Data);
+    return this.fetchViaJwt(NewUrl, "GET", null, Headers, Config);
   }
 
   /**
@@ -463,7 +486,7 @@ export class FetchViaJwt {
    */
   simpleGet(Url, Data = null, Headers = {}, Config = {}) {
     const NewUrl = generateGetUrl(Url, Data);
-    return this.fetch(NewUrl, {}, Headers, Object.assign({}, Config || {}, { method: "GET" }));
+    return this.fetch(NewUrl, null, Headers, Object.assign({}, Config || {}, { method: "GET" }));
   }
   /**
    * Вызывает простой fetch с методом POST без использования JWT авторизации, 

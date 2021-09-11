@@ -1,6 +1,6 @@
 {
   "name": "TRMJsFetchViaJwt",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Class for working with fetch and JWT in JS",
   "keywords": "fetch JWT",
   "homepage": "https://github.com/trm2007/TRMJsFetchViaJwt",
