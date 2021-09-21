@@ -173,7 +173,7 @@ export class FetchViaJwt {
   }
 
   /**
-   * Получает данные методом POST с проверкой авторизации,
+   * Получает данные методом GET с проверкой авторизации,
    * если Access токен просрочен, то повторно запрашивает JWT,
    * используя функцию fetchTokens, если обновить токены не удалось.
    * Получает данные в виде JSON-строки, 
@@ -185,12 +185,27 @@ export class FetchViaJwt {
    * все пары {ключ: значение} из объекта Data будут добавлены в строку GET-запроса
    * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
    * заголовок Content-Type автоматически устанавливается в application/json
-   * @param {number} Count служебный параметр - счетчик неудачных вызовов
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @returns {Promise} промис, содержащий объект с данными
    */
   get(Url, Data = null, Headers = {}, Config = {}) {
     return this.getJSON(Url, Data, Headers, Config);
   }
+  /**
+   * Получает данные методом GET с проверкой авторизации,
+   * если Access токен просрочен, то повторно запрашивает JWT,
+   * используя функцию fetchTokens, если обновить токены не удалось.
+   * Получает данные в виде JSON-строки, 
+   * преобразует их в стандартный объект JavaScript, и возвращает в Promise
+   * 
+   * @param {string} Url 
+   * @param {object} Data не обязательный параметр, объект с данными для POST-запроса, 
+   * все пары {ключ: значение} из объекта Data будут добавлены в строку GET-запроса
+   * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
+   * заголовок Content-Type автоматически устанавливается в application/json
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
+   * @returns {Promise} промис, содержащий объект с данными
+   */
   async getJSON(Url, Data = null, Headers = {}, Config = {}) {
     this.startBeforeHandlers();
     const Response = await this.getCounted(Url, "GET", Data, Headers, Config);
@@ -198,11 +213,25 @@ export class FetchViaJwt {
     this.startAfterHandlers(Result);
     return Result;
   }
+  /**
+   * Делает GET-запрос данные на сервер, в случае ошибки, точнее ответа 401.
+   * вызывает refreshTokensAndRepeatRequest, и после повторно вызывает себя с этими же аргументами,
+   * если ответ будет приходить с кодом 401 постоянно, 
+   * 
+   * @param {string} Url адрес запроса
+   * @param {string} Method метод запроса, этот аргумент здесь нужен для совместимости с refreshTokensAndRepeatRequest
+   * @param {object} Data данные (тело) зароса
+   * @param {object} Headers заголовки запроса
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
+   * @param {number} Count - служебное поле, используется для подсчета кол-ва вызовов
+   * @returns {Promise} необработанный ответ сервера, который возвращает стандарнтный fetch
+   */
   getCounted(Url, Method = "GET", Data = null, Headers = {}, Config = {}, Count = 0) {
+    console.log("[getCounted] =====> Method: ", Method);
     // эта функция вызывается рекурсивно, прибавляя при каждом вызове 1 к Count
     // если кол-во превысит MAX_CALL_COUNT, то выбрасываем исключение
     if (Count >= this.MAX_CALL_COUNT) {
-      throw new ErrorMaxCallCount("[refreshTokensAndRepeatRequest]");
+      throw new ErrorMaxCallCount("[getCounted]");
     }
     // вызываем getViaJwt, которая добавит все поля из Data к Url-запроса
     return this.getViaJwt(Url, Data, Headers, Config)
@@ -232,7 +261,7 @@ export class FetchViaJwt {
     return Result;
   }
   /**
-   * Запрашивает данные нв сервере, в случае ошибки, точнее ответа 401.
+   * Запрашивает данные на сервере, в случае ошибки, точнее ответа 401.
    * вызывает refreshTokensAndRepeatRequest, и после повторно вызывает себя с этими же аргументами,
    * если ответ будет приходить с кодом 401 постоянно, 
    * то стоит проверка (ограничение) на кол-во рекурсивных вызовов - this.MAX_CALL_COUNT
@@ -269,6 +298,7 @@ export class FetchViaJwt {
         }
         return Resp;
       })
+      // this.refreshTokensAndRepeatRequest - возвращает функцию, поэтому в catch попадает именно функция-обработчик ошибки
       .catch(this.refreshTokensAndRepeatRequest(Url, Method, Data, Headers, Config, this.fetchCounted, Count + 1));
   }
 
@@ -285,7 +315,7 @@ export class FetchViaJwt {
    * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
    * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
    * заголовок Content-Type автоматически устанавливается в application/json
-   * @param {number} Count служебный параметр - счетчик неудачных вызовов
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @returns {Promise} промис, содержащий объект с данными
    */
   post(Url, Data = null, Headers = {}, Config = {}) {
@@ -305,7 +335,7 @@ export class FetchViaJwt {
    * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
    * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
    * заголовок Content-Type автоматически устанавливается в application/json
-   * @param {number} Count служебный параметр - счетчик неудачных вызовов
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @returns {Promise} промис, содержащий объект с данными
    */
   put(Url, Data = null, Headers = {}, Config = {}) {
@@ -325,7 +355,7 @@ export class FetchViaJwt {
    * будет преобразован в JSON-строку - JSON.stringify(Data) и добавлен как тело запроса
    * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса,
    * заголовок Content-Type автоматически устанавливается в application/json
-   * @param {number} Count служебный параметр - счетчик неудачных вызовов
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @returns {Promise} промис, содержащий объект с данными
    */
   delete(Url, Data = null, Headers = {}, Config = {}) {
@@ -374,20 +404,20 @@ export class FetchViaJwt {
    * она проверяет статус ответа на 401 ошибку (не авторизован),
    * если ошибка 401, то запрашивает обновление токенов и повторяет основной запрос,
    * иначе выбрасывает исключение с полученной ошибкой дальше,
-   * возвращать функцию нужно, что бы была возможность передать аргументы Url, Method, Data, Headers, Config, Func
+   * возвращать функцию нужно, что бы была возможность передать аргументы Url, Method, Data, Headers, Config, Count
    * 
    * @param {string} Url адрес запроса
    * @param {string} Method метод запроса (GET, POST, PUT...)
    * @param {object} Data не обязательный параметр, объект с данными для POST-запроса, 
    * будет преобразован в JSON-строку - JSON.stringify(Data)
    * @param {object} Headers не обязательный параметр, объект с Http-заголовками для запроса
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @param {function} Func функция, которая выполняет запрос 
    * и из которой произошел вызов этого обновления токенов
-   * @param {number} Count кол-во повторов (кол-во текущих неудачных вызовов)
+   * @param {number} Count - служебное поле, используется для подсчета кол-ва вызовов
    * @returns {function}
    */
-  //  fetchViaJwt(Url, Method = "GET", Data = null, Headers = {}, Config = {}) {
-  refreshTokensAndRepeatRequest(Url, Method, Data, Headers, Config, Func) {
+  refreshTokensAndRepeatRequest(Url, Method, Data, Headers, Config, Func, Count) {
     return (ErrResp) => {
       // если ошибка не Error401, значит это не наша ошибка, выбрасываем дальше
       if (!(ErrResp instanceof Error401)) {
@@ -400,7 +430,7 @@ export class FetchViaJwt {
         this.setRefreshToken(Tokens[this.JWT_REFRESH_TOKEN_NAME]);
         // при удачном получении новых токенов рекурсивно вызываем функцию,
         // в которой произошел вызов этого обновления
-        return Func.call(this, Url, Method, Data, Headers, Config);
+        return Func.call(this, Url, Method, Data, Headers, Config, Count);
       });
     };
   }
@@ -553,6 +583,7 @@ export class FetchViaJwt {
    * @param {object} Data не обязательный параметр, каждая пара ключ значение,
    * будут добавлены к строке запроса ?key1=val1&key2=val2
    * @param {object} Headers 
+   * @param {object} Config конфигурация обращения к серверу для стандартной JS-функции fetch
    * @returns {Promise}
    */
   getViaJwt(Url, Data = null, Headers = {}, Config = {}) {
